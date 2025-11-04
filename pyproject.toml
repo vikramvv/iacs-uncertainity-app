@@ -1,0 +1,31 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "iacs-uncertainty-app"
+version = "0.1.0"
+description = "Streamlit app to compute IACS and propagate uncertainties."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "streamlit>=1.36",
+  "pandas>=2.2",
+  "numpy>=1.26",
+  "openpyxl>=3.1"
+]
+
+[tool.hatch.envs.default]
+python = "3.12"
+dependencies = [
+  "streamlit>=1.36",
+  "pandas>=2.2",
+  "numpy>=1.26",
+  "openpyxl>=3.1"
+]
+
+[tool.hatch.envs.default.scripts]
+app = "streamlit run app.py"
+
+[tool.hatch.build.targets.wheel]
+include = ["app.py", "README.md", "pyproject.toml"]
