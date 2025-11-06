@@ -26,6 +26,11 @@ CURRENT_ACCURACY_TABLE = {
     10.0: {'ppm': 1500, 'offset': 5e-3},
 }
 
+VOLTAGE_ACCURACY_TABLE = {
+    '10mV': {'ppm': 50, 'offset': 50e-9},   # ±(50 ppm of reading + 50 nV)
+    '100mV': {'ppm': 30, 'offset': 757e-9}, # ±(30 ppm of reading + 757 nV)
+}
+
 # -----------------------------
 # Helpers & Calculations
 # -----------------------------
@@ -36,6 +41,20 @@ def get_current_range(I: float) -> Tuple[float, dict]:
         if I <= range_val:
             return range_val, CURRENT_ACCURACY_TABLE[range_val]
     return ranges[-1], CURRENT_ACCURACY_TABLE[ranges[-1]]
+
+def get_voltage_range(V: float) -> str:
+    """Select appropriate voltage range based on measured voltage."""
+    if V <= 0:
+        return '10mV'  # default
+    return '10mV' if V <= 0.01 else '100mV'
+
+def calculate_voltage_uncertainty(V: float) -> float:
+    """Calculate voltage uncertainty based on auto-selected range."""
+    range_key = get_voltage_range(V)
+    specs = VOLTAGE_ACCURACY_TABLE[range_key]
+    ppm = specs['ppm']
+    offset = specs['offset']
+    return (ppm / 1e6) * V + offset, range_key
 
 def calculate_current_uncertainty(I: float) -> float:
     """Calculate current uncertainty based on specification table."""
@@ -126,7 +145,7 @@ with st.sidebar:
     
     st.subheader("Geometry")
     dL_option = st.selectbox("Length ΔL", 
-                             options=[0.01, 0.025, 0.05, 0.1],
+                             options=[0.01, 0.025, 0.05, 0.1,0.2, 0.5, 1.0, 2.0],
                              index=2,
                              format_func=lambda x: f"±{x} mm")
     dL_mm = dL_option
@@ -138,18 +157,7 @@ with st.sidebar:
     dd_mm = dd_option / 1000.0
     
     st.subheader("Instruments")
-    voltage_range = st.selectbox("Voltmeter range (2182A)",
-                                 options=['10mV', '100mV'],
-                                 index=0,
-                                 help="Select based on measured voltage")
-    
-    if voltage_range == '10mV':
-        dV = 50e-9
-        st.caption("✓ ±50 nV")
-    else:
-        dV = 757e-9
-        st.caption("✓ ±757 nV")
-    
+    st.caption("**Voltage source (2182A):** Auto-calculated")
     st.caption("**Current source (2460):** Auto-calculated")
     
     st.markdown("---")
@@ -172,14 +180,29 @@ with tab1:
         
         col1a, col1b = st.columns(2)
         with col1a:
-            I = st.number_input("Current I [A]", value=7.0, min_value=0.0, step=0.1, format="%.6f")
+            I = st.number_input("Current I [A]", value=1.0, min_value=0.0, step=0.1, format="%.6f")
         with col1b:
-            R = st.number_input("Resistance R [Ω]", value=0.012, min_value=0.0, step=0.000001, format="%.9f")
+            R = st.number_input("Resistance R [Ω]", value=0.0012, min_value=0.0, step=0.000001, format="%.9f")
         
         # Calculate voltage
+
         V = I * R if I > 0 and R > 0 else 0.0
-        st.info(f"**Calculated Voltage:** V = {V:.9f} V")
-        
+        dV, auto_range = calculate_voltage_uncertainty(V)
+
+
+        st.info(f"Calculated Voltage: V = {V:.9f} V")
+        st.caption(f"Auto-selected range: {auto_range} | Uncertainty: ±{dV*1e9:.1f} nV")
+        dI = calculate_current_uncertainty(I)
+        # Display current uncertainty with appropriate unit
+        if dI >= 1e-3:
+            current_uncertainty_str = f"±{dI*1e3:.3f} mA"
+        elif dI >= 1e-6:
+            current_uncertainty_str = f"±{dI*1e6:.3f} μA"
+        else:
+            current_uncertainty_str = f"±{dI*1e9:.3f} nA"
+
+        st.caption(f"Current uncertainty: {current_uncertainty_str}")
+
         col2a, col2b = st.columns(2)
         with col2a:
             L_mm = st.number_input("Length L [mm]", value=300.0, min_value=0.0, step=0.1, format="%.3f")
@@ -205,6 +228,7 @@ with tab1:
             # Calculate everything
             dI = calculate_current_uncertainty(I)
             dR = combined_R_uncertainty_abs(R, V, I, dV, dI)
+            
             A_mm2 = area_from_d(d_mm)
             dA_mm2 = delta_A_from_d(A_mm2, d_mm, dd_mm)
             IACS = iacs_percent(R, L_mm, A_mm2)
@@ -220,15 +244,15 @@ with tab1:
                 st.markdown("<h2>–</h2>", unsafe_allow_html=True)
             
             # Key metrics in compact grid
-            m1, m2 = st.columns(2)
-            with m1:
-                st.metric("Relative unc.", f"{rel_u * 100:.{precision}f} %" if rel_u else "–")
-                st.metric("Area A", f"{A_mm2:.{precision}f} mm²")
-            with m2:
-                st.metric("ΔR", f"{dR:.9f} Ω" if dR else "–")
-                st.metric("ΔI", f"{dI*1e3:.3f} mA")
+            # m1, m2 = st.columns(2)
+            # with m1:
+            #     st.metric("Relative unc.", f"{rel_u * 100:.{precision}f} %" if rel_u else "–")
+            #     st.metric("Area A", f"{A_mm2:.{precision}f} mm²")
+            # with m2:
+            #     st.metric("ΔR", f"{dR:.9f} Ω" if dR else "–")
+            #     st.metric("ΔI", f"{dI*1e3:.3f} mA")
             
-            # Uncertainty breakdown
+            # # Uncertainty breakdown
             st.markdown("---")
             st.markdown("**Uncertainty Breakdown**")
             
@@ -291,10 +315,12 @@ with tab2:
     col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 2])
     with col_btn1:
         if st.button("➕ Add Current", use_container_width=True):
+
             new_row = pd.DataFrame([{
                 "I_A": I, "R_ohm": R, "L_mm": L_mm, "d_mm": d_mm,
-                "dL_mm": dL_option, "dd_um": dd_option, "V_range": voltage_range
+                "dL_mm": dL_option, "dd_um": dd_option, "V_range": auto_range  # Use auto-selected range
             }])
+
             st.session_state.trials_df = pd.concat([st.session_state.trials_df, new_row], ignore_index=True)
             st.rerun()
     
@@ -359,6 +385,10 @@ with tab2:
                 "I_A": I_i,
                 "R_ohm": R_i,
                 "V_V": V_i,
+                "ΔV": dV_i,
+                "ΔI": dI_i,
+                "ΔL_mm": dL_i,
+                "Δd_mm": dd_i,
                 "L_mm": L_i,
                 "d_mm": d_i,
                 "A_mm2": A_i
@@ -372,10 +402,15 @@ with tab2:
                 "I_A": "{:.6f}",
                 "R_ohm": "{:.9f}",
                 "V_V": "{:.9f}",
+                "ΔV": "{:.9e}",
+                "ΔI": "{:.9e}",
+                "ΔL_mm": "{:.3f}",
+                "Δd_mm": "{:.6f}",
                 "L_mm": "{:.3f}",
                 "d_mm": "{:.6f}",
                 "A_mm2": "{:.6f}"
             }), use_container_width=True)
+
 
             col_d1, col_d2 = st.columns(2)
             with col_d1:
@@ -398,8 +433,39 @@ with tab2:
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     use_container_width=True
                 )
-        else:
-            st.warning("No valid trials to compute.")
+
+            import plotly.graph_objects as go
+            import numpy as np
+            import pandas as pd
+
+            # Use res_df instead of hardcoded df
+            df = res_df[['Trial', 'IACS_%', '±_pp', 'ΔL_mm', 'Δd_mm']]
+
+            # Create grid for surface
+            X = np.array(sorted(df['ΔL_mm'].unique()))
+            Y = np.array(sorted(df['Δd_mm'].unique()))
+            Z = np.zeros((len(Y), len(X)))
+
+            for i, y in enumerate(Y):
+                for j, x in enumerate(X):
+                    val = df[(df['ΔL_mm'] == x) & (df['Δd_mm'] == y)]['±_pp']
+                    Z[i, j] = val.values[0] if len(val) > 0 else np.nan
+
+            fig = go.Figure(data=[go.Surface(z=Z, x=X, y=Y, colorscale='Viridis')])
+            fig.update_layout(
+                title='Uncertainty Surface',
+                scene=dict(
+                    xaxis_title='ΔL (mm)',
+                    yaxis_title='Δd (mm)',
+                    zaxis_title='IACS Uncertainty (± pp)'
+                ),
+                autosize=True,
+                margin=dict(l=0, r=0, b=0, t=40)
+            )
+
+            # Render in Streamlit
+            st.plotly_chart(fig, use_container_width=True)
+
 
 # =============================================================================
 # TAB 3: REFERENCE

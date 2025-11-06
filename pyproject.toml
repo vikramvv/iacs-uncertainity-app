@@ -12,7 +12,9 @@ dependencies = [
   "streamlit>=1.36",
   "pandas>=2.2",
   "numpy>=1.26",
-  "openpyxl>=3.1"
+  "openpyxl>=3.1",
+  "matplotlib",
+  "plotly"
 ]
 
 [tool.hatch.envs.default]
@@ -21,7 +23,9 @@ dependencies = [
   "streamlit>=1.36",
   "pandas>=2.2",
   "numpy>=1.26",
-  "openpyxl>=3.1"
+  "openpyxl>=3.1",
+  "matplotlib",
+  "plotly"
 ]
 
 [tool.hatch.envs.default.scripts]
